@@ -29,7 +29,8 @@ jobs:
         PYTHONPATH=$PYTHONPATH:$(pwd) pytest -s -v tests/
         
     - name: Upload test artifacts
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: test-artifacts
         path: test_artifacts/
+        retention-days: 90
