@@ -1,3 +1,4 @@
+![Build Status](https://github.com/ManivelSethu/Session5/actions/workflows/ml-pipeline.yml/badge.svg)
 # Session5
 Session5 - ML OPs CI/CD and a MNIST based model
 
