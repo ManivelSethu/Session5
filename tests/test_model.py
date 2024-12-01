@@ -84,7 +84,7 @@ def test_model_accuracy():
     device = torch.device("cpu")
     model = MNISTNet().to(device)
     
-    # Load pre-trained model if exists (for CI/CD)
+    # Load pre-trained model if exists
     try:
         import glob
         model_files = glob.glob('saved_models/mnist_model_*.pth')
@@ -93,13 +93,38 @@ def test_model_accuracy():
             print(f"\nLoading model from: {latest_model}")
             model.load_state_dict(torch.load(latest_model, map_location=device, weights_only=True))
         else:
-            print("\nNo saved model found, skipping accuracy test")
-            pytest.skip("No saved model found")
+            print("\nNo saved model found, training a quick model...")
+            # Quick training
+            transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+            ])
+            
+            train_dataset = datasets.MNIST('./data', train=True, download=True, transform=transform)
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1000, shuffle=True)
+            
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.Adam(model.parameters())
+            
+            # Train for just a few batches
+            model.train()
+            for batch_idx, (data, target) in enumerate(train_loader):
+                if batch_idx >= 10:  # Only train on 10 batches
+                    break
+                data, target = data.to(device), target.to(device)
+                optimizer.zero_grad()
+                output = model(data)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()
+                if batch_idx % 2 == 0:
+                    print(f'Quick Training Batch {batch_idx}/10, Loss: {loss.item():.4f}')
+            
     except Exception as e:
-        print(f"\nError loading model: {str(e)}")
-        pytest.skip("Error loading model")
+        print(f"\nError during model loading/training: {str(e)}")
+        pytest.skip("Error in model preparation")
     
-    # Prepare test data
+    # Rest of the accuracy test remains the same
     transform = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,))
@@ -108,7 +133,6 @@ def test_model_accuracy():
     test_dataset = datasets.MNIST('./data', train=False, download=True, transform=transform)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000)
     
-    # Evaluate accuracy
     model.eval()
     correct = 0
     total = 0
