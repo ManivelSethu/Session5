@@ -14,3 +14,19 @@ MNISTNet(
 Total parameters: 7,098
 Trainable parameters: 7,098
 
+**Added 3 new test cases**
+### 1. Test Model Robustness
+- **Function:** `test_model_robustness`
+- **Description:** Evaluates the model's performance against noisy inputs by adding Gaussian noise to test images and checking prediction consistency.
+- **Purpose:** Ensures the model is robust to variations in input data.
+
+### 2. Test Model Batch Inference
+- **Function:** `test_model_batch_inference`
+- **Description:** Assesses the model's efficiency and performance with different batch sizes, measuring inference time and output shape.
+- **Purpose:** Validates the model's scalability and ability to handle varying input sizes.
+
+### 3. Test Model Save and Load
+- **Function:** `test_model_save_load`
+- **Description:** Verifies the model's ability to be saved and loaded correctly using both state dictionary and TorchScript methods, ensuring output consistency.
+- **Purpose:** Ensures model serialization and deserialization for deployment and versioning.
+
