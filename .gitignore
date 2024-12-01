@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual Environment
+venv/
+env/
+
+# PyTorch
+*.pth
+saved_models/
+
+# Dataset
+data/
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+.DS_Store 
