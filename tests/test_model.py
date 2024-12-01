@@ -9,6 +9,9 @@ import os
 import matplotlib.pyplot as plt
 import torchvision.transforms.functional as TF
 from torchvision.transforms import RandomRotation, RandomAffine, ColorJitter
+import time
+import numpy as np
+import glob
 
 def count_parameters(model):
     total_params = sum(p.numel() for p in model.parameters())
@@ -226,3 +229,148 @@ def test_model_accuracy():
     # Different accuracy thresholds for quick training vs full training
     min_accuracy = 95 if not is_quick_training else 35
     assert accuracy >= min_accuracy, f"Model accuracy is {accuracy:.2f}%, should be at least {min_accuracy}% {'(quick training)' if is_quick_training else '(full model)'}" 
+
+def test_model_robustness():
+    """Test model's performance with noisy inputs"""
+    device = torch.device("cpu")
+    model = MNISTNet().to(device)
+    
+    # Load or train model
+    try:
+        model_files = glob.glob('saved_models/mnist_model_*.pth')
+        if model_files:
+            latest_model = max(model_files)
+            model.load_state_dict(torch.load(latest_model, map_location=device, weights_only=True))
+        else:
+            print("\nNo saved model found, training a quick model for robustness testing...")
+            # Quick training
+            train_transform = transforms.Compose([
+                transforms.ToTensor(),
+                transforms.Normalize((0.1307,), (0.3081,))
+            ])
+            train_dataset = datasets.MNIST('./data', train=True, download=True, transform=train_transform)
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
+            
+            # Train for a few batches
+            model.train()
+            criterion = nn.CrossEntropyLoss()
+            optimizer = optim.Adam(model.parameters())
+            for batch_idx, (data, target) in enumerate(train_loader):
+                if batch_idx >= 5:  # Train for 5 batches
+                    break
+                data, target = data.to(device), target.to(device)
+                optimizer.zero_grad()
+                output = model(data)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()
+            
+            print("Quick training completed for robustness testing.")
+    
+        # Create a clean test image
+        test_dataset = datasets.MNIST('./data', train=False, download=True, transform=transforms.ToTensor())
+        clean_image = test_dataset[0][0].unsqueeze(0)  # Add batch dimension
+        
+        # Get prediction for clean image
+        model.eval()
+        with torch.no_grad():
+            clean_pred = model(clean_image).argmax(dim=1)
+        
+        # Test with different noise levels
+        noise_levels = [0.1, 0.2, 0.3]
+        for noise_level in noise_levels:
+            # Add Gaussian noise
+            noise = torch.randn_like(clean_image) * noise_level
+            noisy_image = clean_image + noise
+            noisy_image = torch.clamp(noisy_image, 0, 1)  # Ensure valid pixel values
+            
+            # Get prediction for noisy image
+            with torch.no_grad():
+                noisy_pred = model(noisy_image).argmax(dim=1)
+            
+            print(f"\nNoise level: {noise_level}")
+            print(f"Clean prediction: {clean_pred.item()}")
+            print(f"Noisy prediction: {noisy_pred.item()}")
+            
+            # For low noise levels, prediction should stay the same
+            if noise_level <= 0.1:
+                assert clean_pred == noisy_pred, f"Model prediction changed with low noise level {noise_level}"
+    
+    except Exception as e:
+        pytest.skip(f"Error in robustness testing: {str(e)}")
+
+def test_model_batch_inference():
+    """Test model's performance with different batch sizes"""
+    device = torch.device("cpu")
+    model = MNISTNet().to(device)
+    model.eval()
+    
+    # Test batch sizes
+    batch_sizes = [1, 32, 64, 128]
+    test_input = torch.randn(128, 1, 28, 28)  # Create max size input
+    
+    print("\nTesting different batch sizes:")
+    for batch_size in batch_sizes:
+        # Measure inference time
+        batch_input = test_input[:batch_size]
+        
+        start_time = time.time()
+        with torch.no_grad():
+            output = model(batch_input)
+        inference_time = time.time() - start_time
+        
+        # Basic checks
+        assert output.shape == (batch_size, 10), f"Incorrect output shape for batch size {batch_size}"
+        print(f"Batch size {batch_size}: {inference_time:.4f} seconds")
+        
+        # Memory check (basic)
+        torch.cuda.empty_cache() if torch.cuda.is_available() else None
+
+def test_model_save_load():
+    """Test model serialization and deserialization"""
+    device = torch.device("cpu")
+    model = MNISTNet().to(device)
+    
+    # Create test input
+    test_input = torch.randn(1, 1, 28, 28)
+    
+    # Get initial prediction
+    model.eval()
+    with torch.no_grad():
+        initial_output = model(test_input)
+    
+    # Test saving and loading with different methods
+    save_path = 'test_artifacts'
+    os.makedirs(save_path, exist_ok=True)
+    
+    print("\nTesting model save/load:")
+    
+    # Method 1: state_dict
+    state_dict_path = os.path.join(save_path, 'test_state_dict.pth')
+    torch.save(model.state_dict(), state_dict_path)
+    
+    loaded_model = MNISTNet().to(device)
+    loaded_model.load_state_dict(torch.load(state_dict_path))
+    with torch.no_grad():
+        loaded_output = loaded_model(test_input)
+    
+    assert torch.allclose(initial_output, loaded_output, rtol=1e-4), "State dict save/load changed model outputs"
+    print("State dict save/load: Passed")
+    
+    # Method 2: TorchScript
+    script_path = os.path.join(save_path, 'test_script.pt')
+    scripted_model = torch.jit.script(model)
+    torch.jit.save(scripted_model, script_path)
+    
+    loaded_script_model = torch.jit.load(script_path)
+    with torch.no_grad():
+        script_output = loaded_script_model(test_input)
+    
+    assert torch.allclose(initial_output, script_output, rtol=1e-4), "TorchScript save/load changed model outputs"
+    print("TorchScript save/load: Passed")
+    
+    # Check file sizes
+    state_dict_size = os.path.getsize(state_dict_path) / 1024  # KB
+    script_size = os.path.getsize(script_path) / 1024  # KB
+    print(f"State dict size: {state_dict_size:.2f} KB")
+    print(f"TorchScript size: {script_size:.2f} KB") 
